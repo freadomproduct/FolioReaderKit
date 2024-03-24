@@ -71,6 +71,9 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
     private var pageNumberLabel: UILabel?
     private var finishButton: UIButton?
     private var nextButton: UIButton?
+    private var timer: Timer?
+    private var durationStoryRead = 0
+    private var timerLabel: UILabel?
 
     fileprivate var screenBounds: CGRect!
     fileprivate var pointNow = CGPoint.zero
@@ -113,6 +116,7 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
      Common Initialization
      */
     fileprivate func initialization() {
+        durationStoryRead = readerConfig.durationStoryRead
         if self.readerConfig.hideBars == true {
             self.pageIndicatorHeight = 0
         }
@@ -135,6 +139,8 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
         screenBounds = self.getScreenBounds()
 
         setPageSize(UIApplication.shared.statusBarOrientation)
+
+        addNotifications()
 
         // Layout
         collectionViewLayout.sectionInset = UIEdgeInsets.zero
@@ -203,6 +209,7 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
 //        if let scrollScrubber = scrollScrubber {
 //            view.addSubview(scrollScrubber.slider)
 //        }
+        timmerView()
         bottomView()
     }
 
@@ -224,6 +231,33 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
 
         setPageSize(UIApplication.shared.statusBarOrientation)
         updateSubviewFrames()
+    }
+
+    func timmerView() {
+        let timerView = UIView(frame: CGRect(x: getScreenBounds().width - 150 - 16, y: 120, width: 150, height: 75))
+
+        let timerBackgroundImageView = UIImageView(frame: CGRect(origin: .zero, size: CGSize(width: 150, height: 75)))
+        timerBackgroundImageView.image = UIImage(named: "PDF Timer")
+        timerBackgroundImageView.contentMode = .scaleAspectFit
+
+        let timerLabel = UILabel(frame: CGRect(origin: CGPoint(x: 35, y: 20), size: CGSize(width: 110, height: 35)))
+        self.timerLabel = timerLabel
+        timerLabel.textColor = .white
+        timerLabel.font = UIFont(name: "Rubik-Bold", size: 20)
+        timerLabel.textAlignment = .center
+        timerView.addSubview(timerBackgroundImageView)
+        timerView.addSubview(timerLabel)
+
+        self.view.addSubview(timerView)
+        self.view.bringSubviewToFront(timerView)
+
+        timer?.invalidate()
+        DispatchQueue.main.async {
+            self.timer = Timer.scheduledTimer(timeInterval: 1,
+                                              target: self,
+                                              selector: #selector(self.changeTimerLabel),
+                                              userInfo: nil, repeats: true)
+        }
     }
 
     func bottomView() {
@@ -250,7 +284,7 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
         finishButton.backgroundColor = UIColor(named: "color_walkthrough5")
         finishButton.setTitle("FINISH", for: .normal)
         finishButton.titleLabel?.font = UIFont(name: "Rubic-Bold", size: 20)
-        finishButton.addTarget(self, action: #selector(onClickNextButton), for: .touchUpInside)
+        finishButton.addTarget(self, action: #selector(onClickFinishButton), for: .touchUpInside)
         finishButton.isHidden = true
 
         self.view.addSubview(previousButton)
@@ -269,7 +303,25 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
     }
 
     @objc
+    func changeTimerLabel() {
+        durationStoryRead += 1
+        timerLabel?.text = timeString(time: TimeInterval(durationStoryRead))
+    }
+
+    func recordTime() {
+        timer?.invalidate()
+        NotificationCenter.default.post(name: NSNotification.Name("recordTime"), object: ["durationStoryRead": durationStoryRead])
+    }
+
+    func timeString(time: TimeInterval) -> String {
+        let minutes = Int(time) / 60 % 60
+        let seconds = Int(time) % 60
+        return String(format: "%02i:%02i", minutes, seconds)
+    }
+
+    @objc
     func onClickCloseButton() {
+        recordTime()
         self.parent?.navigationController?.popViewController(animated: true)
     }
 
@@ -287,15 +339,50 @@ open class FolioReaderCenter: UIViewController, UICollectionViewDelegate, UIColl
         }
     }
 
+    @objc
+    func onClickFinishButton() {
+        onClickCloseButton()
+        NotificationCenter.default.post(name: NSNotification.Name("finishStory"), object: nil)
+    }
+
     private func updatePageNumber() {
         self.pageNumberLabel?.text = "\(self.currentPageNumber) of \(self.totalPages)"
         if self.currentPageNumber == self.totalPages {
-            self.finishButton?.isHidden = false
+            self.finishButton?.isHidden = readerConfig.storyStatus == "completed"
             self.nextButton?.isHidden = true
         } else {
             self.finishButton?.isHidden = true
             self.nextButton?.isHidden = false
         }
+    }
+
+    private func addNotifications() {
+        NotificationCenter.default.addObserver(self, selector: #selector(didBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+
+        NotificationCenter.default.addObserver(self, selector: #selector(willResignActive), name: UIApplication.willResignActiveNotification, object: nil)
+
+        NotificationCenter.default.addObserver(self, selector: #selector(appWillTerminate), name: UIApplication.willTerminateNotification, object: nil)
+    }
+
+    @objc func willResignActive(_ notification: Notification) {
+        recordTime()
+    }
+
+    @objc func didBecomeActive() {
+        DispatchQueue.main.async {
+            if let isVaild = self.timer?.isValid {
+                if !isVaild {
+                    self.timer = Timer.scheduledTimer(timeInterval: 1,
+                                                      target: self,
+                                                      selector: #selector(self.changeTimerLabel),
+                                                      userInfo: nil, repeats: true)
+                }
+            }
+        }
+    }
+
+    @objc func appWillTerminate() {
+        recordTime()
     }
 
     // MARK: Layout

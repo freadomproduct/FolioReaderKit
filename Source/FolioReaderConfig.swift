@@ -131,6 +131,12 @@ open class FolioReaderConfig: NSObject {
     open lazy var mediaOverlayColor: UIColor! = self.tintColor
 
     // MARK: Custom actions
+    
+    /// duration
+    open var durationStoryRead = 0
+    
+    /// storyStatus
+    open var storyStatus = ""
 
     /// hide the navigation bar and the bottom status view
     open var hideBars = false
